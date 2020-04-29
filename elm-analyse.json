@@ -1,0 +1,11 @@
+{
+    "checks": {
+    },
+    "TriggerWords": {
+        "words": ["todo", "fix"]
+    },
+    "excludedPaths" : [
+        "src\\ProjectSettings",
+        "src\\Types.elm"
+    ]
+}
