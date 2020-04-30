@@ -72,6 +72,12 @@ export function initialClientPorts(elmApp) {
             elmApp.ports.messageReceiver.send(event);
         });
 
+        // Receiving a reply (signal) ...
+        session.on('signal:reply', function signalCallback(event) {
+            elmApp.ports.messageReceiver.send(event);
+        });
+
+        // Receiving a connection annoucement (signal) ...
         session.on('signal:conn', function signalCallback(event) {
             var splits = event.data.split('|');
             var payload =
@@ -82,6 +88,7 @@ export function initialClientPorts(elmApp) {
             elmApp.ports.newStreamConnected.send(payload);
         });
 
+        // Receiving a reaction to a message (signal) ...
         session.on('signal:reaction', function signalCallback(event) {
             console.log("why are you so reactive?!?!?!");
 
@@ -93,7 +100,6 @@ export function initialClientPorts(elmApp) {
             };
             elmApp.ports.newReaction.send(payload);
         });
-
     });
 
     // tracking SDK being `null` indicates tracking will be ignored/unsent
@@ -127,7 +133,32 @@ export function initialClientPorts(elmApp) {
                 data: `${correlationId}${delimiter}${txtMsg}`
             }, function signalCallback(error) {
                 if (error) {
-                    console.error('Error sending signal:', error.name, error.message);
+                    console.error('Error sending signal(msg):', error.name, error.message);
+                }
+            });
+        } else {
+            console.log("Session is available");
+        }
+    });
+
+    /**
+     * port sendReply : String -> Cmd msg
+     */
+    elmApp.ports.sendReply.subscribe(function (replyMsg) {
+        if (session) {
+            // we expect the web client to send txtMsg in the form:
+            //
+            // `${correlationId}${delimiter}${content}`
+            //
+            // Where, the `delimiter = "‡"`, 
+            //    and the correlationId is provide, so that we can 
+            //    use it to _correlate_ to the original message.
+            session.signal({
+                type: 'reply',
+                data: replyMsg
+            }, function signalCallback(error) {
+                if (error) {
+                    console.error('Error sending signal(reply):', error.name, error.message);
                 }
             });
         } else {

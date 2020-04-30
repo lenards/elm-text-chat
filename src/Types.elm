@@ -53,6 +53,22 @@ type alias ChatMessage =
     }
 
 
+type alias ChatReply =
+    { type_ : String
+    , correlationId : String
+    , replyTo : ChatMessage
+    }
+
+
+type ChatMessageId
+    = ChatMsgId String
+
+
+type ReplyState
+    = NotAuthoring
+    | ReplyingTo ChatMessageId String
+
+
 type alias Model =
     { openTokUrl : String
     , openTokAuth : OpenTokAuth
@@ -62,6 +78,8 @@ type alias Model =
     , connectionId : String
     , streamConnections : Dict String String
     , reactions : Dict String (Set String)
+    , replies : Dict String (List ChatReply)
+    , replyState : ReplyState
     }
 
 
@@ -73,6 +91,9 @@ type Msg
     | DraftChanged String
     | Send
     | Recv (Result Decode.Error MessageEventDto)
+    | AuthorReply String
+    | DraftReplyChanged String
+    | SendReply
     | React String
     | LatestConnectionId String
     | NewStreamConnected (Result Decode.Error NewStreamDto)
@@ -131,4 +152,18 @@ toChatMessage dto =
     , fromConnection = dto.from.connectionId
     , creationTime = Time.millisToPosix dto.from.creationTime
     , connectionData = dto.from.data
+    }
+
+
+toChatReply : MessageEventDto -> ChatReply
+toChatReply dto =
+    let
+        chatMsg =
+            dto
+                |> toChatMessage
+                |> (\cm -> { cm | type_ = "msg" })
+    in
+    { type_ = "reply"
+    , correlationId = chatMsg.id
+    , replyTo = chatMsg
     }
