@@ -4,9 +4,9 @@ import Api
 import Dict
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Ports exposing (hideNameModal, initializeClient, messageEventDecoder, messageReceiver, newReaction, newStreamConnected, newStreamDecoder, reactToMessage, reactionDecoder, receiveConnectionId, sendMessage, showNameModal)
+import Ports exposing (MessageEventDto, hideNameModal, initializeClient, messageEventDecoder, messageReceiver, newReaction, newStreamConnected, newStreamDecoder, reactToMessage, reactionDecoder, receiveConnectionId, sendMessage, sendReply, showNameModal)
 import Set
-import Types exposing (Flags, Model, Msg(..), OpenTokAuth(..), SessionDto, createOpenTokAuth, toChatMessage, toClientTuple)
+import Types exposing (ChatMessageId(..), ChatReply, Flags, Model, Msg(..), OpenTokAuth(..), ReplyState(..), SessionDto, createOpenTokAuth, toChatMessage, toChatReply, toClientTuple)
 
 
 initialModel : Flags -> Model
@@ -19,6 +19,8 @@ initialModel flags =
     , connectionId = ""
     , streamConnections = Dict.empty
     , reactions = Dict.empty
+    , replies = Dict.empty
+    , replyState = NotAuthoring
     }
 
 
@@ -31,6 +33,37 @@ init flags =
     ( model
     , showNameModal ()
     )
+
+
+updateRepliesIn : Model -> ChatReply -> Model
+updateRepliesIn model reply =
+    { model
+        | replies =
+            model.replies
+                |> Dict.get reply.correlationId
+                |> Maybe.withDefault []
+                |> (\rs ->
+                        Dict.insert
+                            reply.correlationId
+                            (reply :: rs)
+                            model.replies
+                   )
+    }
+
+
+updateMessagesWith : MessageEventDto -> Model -> Model
+updateMessagesWith dto model =
+    if dto.type_ == "signal:msg" then
+        { model
+            | messages = (dto |> toChatMessage) :: model.messages
+        }
+
+    else if dto.type_ == "signal:reply" then
+        (dto |> toChatReply)
+            |> updateRepliesIn model
+
+    else
+        model
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -62,10 +95,43 @@ update msg model =
             , sendMessage model.draftMessage
             )
 
-        Recv (Ok dto) ->
+        AuthorReply chatMsgId ->
             ( { model
-                | messages = (dto |> toChatMessage) :: model.messages
+                | replyState = ReplyingTo (ChatMsgId chatMsgId) ""
               }
+            , Cmd.none
+            )
+
+        DraftReplyChanged replyText ->
+            let
+                updatedState =
+                    case model.replyState of
+                        ReplyingTo msgId _ ->
+                            ReplyingTo msgId replyText
+
+                        NotAuthoring ->
+                            ReplyingTo (ChatMsgId "") replyText
+            in
+            ( { model | replyState = updatedState }
+            , Cmd.none
+            )
+
+        SendReply ->
+            let
+                cmd =
+                    case model.replyState of
+                        ReplyingTo (ChatMsgId ident) content ->
+                            sendReply
+                                (String.join "‡" [ ident, content ])
+
+                        NotAuthoring ->
+                            Cmd.none
+            in
+            ( { model | replyState = NotAuthoring }, cmd )
+
+        Recv (Ok dto) ->
+            ( model
+                |> updateMessagesWith dto
             , Cmd.none
             )
 

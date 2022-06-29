@@ -7,7 +7,7 @@ import Html.Attributes exposing (attribute, class, classList, for, id, name, pla
 import Html.Events exposing (keyCode, on, onClick, onInput)
 import Json.Decode as Decode
 import Set exposing (Set)
-import Types exposing (ChatMessage, Model, Msg(..))
+import Types exposing (ChatMessage, ChatMessageId(..), ChatReply, Model, Msg(..), ReplyState(..))
 
 
 onEnter : msg -> Html.Attribute msg
@@ -140,22 +140,56 @@ renderReaction myConnectionId chatMsg reactions =
         [ contents ]
 
 
-chatMessage :
-    Dict String (Set String)
-    -> Dict String String
-    -> String
-    -> ChatMessage
-    -> Html Msg
-chatMessage reactions connections myConnectionId chatMsg =
+renderReplyLabel : List ChatReply -> String -> Html Msg
+renderReplyLabel replies chatMsgId =
     let
+        replyCount =
+            List.length replies
+
+        replyLabel =
+            if replyCount == 1 then
+                "1 reply"
+
+            else
+                String.fromInt replyCount ++ " replies"
+    in
+    if replyCount > 0 then
+        div
+            [ class "chat__replies-label"
+            , style "cursor" "pointer"
+            , onClick
+                (AuthorReply chatMsgId)
+            ]
+            [ text replyLabel ]
+
+    else
+        div [] []
+
+
+renderRepliesInfo : Dict String (List ChatReply) -> ChatMessage -> Html Msg
+renderRepliesInfo allReplies chatMsg =
+    case allReplies |> Dict.get chatMsg.id of
+        Just replies ->
+            renderReplyLabel replies chatMsg.id
+
+        Nothing ->
+            div [] []
+
+
+chatMessage : Model -> ChatMessage -> Html Msg
+chatMessage model chatMsg =
+    let
+        { replies, reactions, streamConnections, connectionId } =
+            model
+
         classes =
             classList
                 [ ( "chat__bubble", True )
                 , ( "chat__bubble--sent"
-                  , chatMsg.fromConnection == myConnectionId
+                  , chatMsg.fromConnection == connectionId
                   )
                 , ( "chat__bubble--rcvd"
-                  , chatMsg.fromConnection /= myConnectionId
+                  , chatMsg.fromConnection /= connectionId
                   )
                 ]
 
@@ -163,10 +197,10 @@ chatMessage reactions connections myConnectionId chatMsg =
             classList
                 [ ( "chat__bubble-container", True )
                 , ( "chat__bubble-container--sent"
-                  , chatMsg.fromConnection == myConnectionId
+                  , chatMsg.fromConnection == connectionId
                   )
                 , ( "chat__bubble-container--rcvd"
-                  , chatMsg.fromConnection /= myConnectionId
+                  , chatMsg.fromConnection /= connectionId
                   )
                 ]
 
@@ -174,15 +208,15 @@ chatMessage reactions connections myConnectionId chatMsg =
             classList
                 [ ( "chat__bubble-info", True )
                 , ( "chat__bubble-info--sent"
-                  , chatMsg.fromConnection == myConnectionId
+                  , chatMsg.fromConnection == connectionId
                   )
                 , ( "chat__bubble-info--rcvd"
-                  , chatMsg.fromConnection /= myConnectionId
+                  , chatMsg.fromConnection /= connectionId
                   )
                 ]
 
         handle =
-            connections
+            streamConnections
                 |> Dict.get chatMsg.fromConnection
                 |> Maybe.withDefault "sender unknown"
     in
@@ -195,11 +229,13 @@ chatMessage reactions connections myConnectionId chatMsg =
             [ id chatMsg.id
             , class "chat__bubble-content"
             , classes
+            , style "cursor" "pointer"
+            , onClick (AuthorReply chatMsg.id)
             ]
             [ text chatMsg.content ]
         , div [ infoClasses ]
             [ renderReaction
-                myConnectionId
+                connectionId
                 chatMsg
                 reactions
             , div
@@ -208,6 +244,7 @@ chatMessage reactions connections myConnectionId chatMsg =
                 ]
                 [ text handle ]
             ]
+        , chatMsg |> renderRepliesInfo replies
         ]
 
 
@@ -221,15 +258,54 @@ renderChat model =
             ]
             (model.messages
                 |> List.reverse
-                |> List.map
-                    (chatMessage
-                        model.reactions
-                        model.streamConnections
-                        model.connectionId
-                    )
+                |> List.map (chatMessage model)
             )
         , renderChatInput model.draftMessage
         ]
+
+
+renderReply : Model -> ChatReply -> Html Msg
+renderReply model chatReply =
+    li []
+        [ text chatReply.replyTo.content ]
+
+
+renderReplies : Maybe (List ChatReply) -> Model -> List (Html Msg)
+renderReplies maybeList model =
+    case maybeList of
+        Just chatReplies ->
+            chatReplies
+                |> List.map (renderReply model)
+
+        Nothing ->
+            []
+
+
+renderReplyAuthoring : Model -> Html Msg
+renderReplyAuthoring model =
+    case model.replyState of
+        NotAuthoring ->
+            div [] []
+
+        ReplyingTo (ChatMsgId chatMsgId) content ->
+            div
+                [ class "container__threaded-reply" ]
+                [ ul [ class "chat__replies" ]
+                    (model
+                        |> renderReplies (Dict.get chatMsgId model.replies)
+                    )
+                , div [ class "chat__input" ]
+                    [ input
+                        [ id "replyTxt"
+                        , type_ "text"
+                        , placeholder "Input your reply here"
+                        , onInput DraftReplyChanged
+                        , onEnter SendReply
+                        , value content
+                        ]
+                        []
+                    ]
+                ]
 
 
 renderContent : Model -> Html Msg
@@ -240,6 +316,7 @@ renderContent model =
             , div [ id "publisher", class "video__tile" ] []
             ]
         , renderChat model
+        , renderReplyAuthoring model
         , renderMicroModalMarkup model
         ]
 

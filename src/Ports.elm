@@ -14,6 +14,9 @@ port hideNameModal : () -> Cmd msg
 port sendMessage : String -> Cmd msg
 
 
+port sendReply : String -> Cmd msg
+
+
 port reactToMessage : ( String, String ) -> Cmd msg
 
 
@@ -29,7 +32,7 @@ port newReaction : (Encode.Value -> msg) -> Sub msg
 port receiveConnectionId : (String -> msg) -> Sub msg
 
 
-{-| Receive messages (signals) from the OpenTok client, on "signal:msg"
+{-| Receive messages (signals) from the OpenTok client, on "signal:msg" and on "signal:reply"
 
 ref: <https://lengrand.fr/a-short-introduction-to-ports-and-flags-in-elm/>
 
